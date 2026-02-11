@@ -126,4 +126,4 @@ and we will look further into workarounds for this.
 ## License
 
 Card Form is open source and available under the MIT license. See the [LICENSE](LICENSE) file for
-more info.
+more info..
