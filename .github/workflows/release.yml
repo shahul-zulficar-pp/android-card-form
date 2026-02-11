@@ -11,7 +11,6 @@ jobs:
   #First we build
 
   bump_version:
-    needs: [ publish ]
     name: Bump Version
     runs-on: ubuntu-latest
     steps:
