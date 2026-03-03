@@ -1,0 +1,30 @@
+# .github/workflows/legacy-ci.yml
+name: Legacy CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      # LINE 15: unsecure-commands fires here
+      # Re-enables deprecated ::set-env and ::add-path workflow commands
+      # These were disabled in Oct 2020 due to CVE-2020-15228
+      # Re-enabling means any step that prints to stdout can set env vars
+      # e.g. a compromised action printing "::set-env name=LD_PRELOAD::/tmp/evil.so"
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup legacy toolchain
+        run: |
+          # This action was written pre-2020 and uses ::set-env internally
+          echo "Setting up legacy build environment"
+
+      - name: Build
+        run: make build
