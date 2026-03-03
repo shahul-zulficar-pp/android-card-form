@@ -1,0 +1,28 @@
+# .github/workflows/bot-deploy.yml
+name: Bot Deploy Trigger
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  deployments: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check comment trigger
+        # LINE 20: bot-check fires here
+        # github.event.sender.login is spoofable in certain scenarios
+        # renovate[bot] identity can be manipulated similar to dependabot[bot]
+        if: |
+          github.event.sender.login == 'renovate[bot]' &&
+          contains(github.event.comment.body, '/deploy')
+        run: |
+          echo "Deploying triggered by bot comment"
+          ./scripts/deploy.sh
+        env:
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
