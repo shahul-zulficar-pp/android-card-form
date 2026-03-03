@@ -1,0 +1,35 @@
+# .github/workflows/validate-pr.yml
+name: Validate PR
+
+on:
+  pull_request_target:           # privileged trigger
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      # LINE 17: dangerous-checkout fires here
+      # pull_request_target runs with base repo privileges
+      # but ref points to the attacker's fork commit
+      # so attacker-controlled code runs with elevated permissions
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}   # attacker-controlled
+
+      - name: Run validation
+        run: |
+          # This now executes attacker-controlled scripts
+          bash .github/scripts/validate.sh
+
+      - name: Post check result
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --body "Validation passed"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
