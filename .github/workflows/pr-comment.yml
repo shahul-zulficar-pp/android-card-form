@@ -1,0 +1,34 @@
+# .github/workflows/pr-comment.yml
+name: PR Comment
+
+on:
+  pull_request_target:           # [dangerous-write trigger] privileged context
+    types: [opened, synchronize]
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  comment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set PR metadata
+        run: |
+          # LINE 17: dangerous-write fires here
+          # github.event.pull_request.title is attacker-controlled
+          # writing directly to $GITHUB_ENV persists it for all subsequent steps
+          echo "PR_TITLE=${{ github.event.pull_request.title }}" >> $GITHUB_ENV
+
+          # LINE 21: also fires here
+          # github.head_ref is attacker-controlled branch name
+          echo "PR_BRANCH=${{ github.head_ref }}" >> $GITHUB_ENV
+
+          # LINE 25: also fires here
+          # PR body is attacker-controlled
+          echo "PR_BODY=${{ github.event.pull_request.body }}" >> $GITHUB_ENV
+
+      - name: Post comment
+        run: |
+          echo "PR from branch: $PR_BRANCH"
+          echo "Title: $PR_TITLE"
