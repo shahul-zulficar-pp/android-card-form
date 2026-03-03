@@ -1,0 +1,31 @@
+# .github/workflows/debug-upload.yml
+name: Debug Artifact Upload
+
+on:
+  pull_request:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run tests
+        run: npm test
+
+      # LINE 17: dangerous-artefact fires here
+      # explicitly uploading .git/ directory
+      # directly exposes the stored GITHUB_TOKEN in .git/config
+      - name: Upload git directory for debug
+        uses: actions/upload-artifact@v4
+        with:
+          name: git-debug
+          path: .git/                    # <-- explicit .git/ upload
+
+      # LINE 26: dangerous-artefact also fires here
+      # uploading .git/config directly
+      - name: Upload git config
+        uses: actions/upload-artifact@v4
+        with:
+          name: git-config-debug
+          path: .git/config              # <-- direct .git/config upload
