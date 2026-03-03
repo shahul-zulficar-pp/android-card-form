@@ -1,0 +1,29 @@
+name: Code Quality Check
+
+on:
+  pull_request_target:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Extract package name
+        id: pkg
+        run: |
+          # Reads name from attacker-controlled package.json
+          PKG_NAME=$(cat package.json | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+          echo "name=$PKG_NAME" >> $GITHUB_OUTPUT
+
+      - name: Set build env
+        run: |
+          # Step output flows into GITHUB_ENV
+          echo "BUILD_TARGET=${{ steps.pkg.outputs.name }}" >> $GITHUB_ENV
+
+      - name: Build
+        run: |
+          echo "Building $BUILD_TARGET"
+          npm run build
