@@ -1,0 +1,134 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release'
+        required: true
+
+env:
+  SIGNING_KEY_FILE_PATH: /home/runner/secretKey.gpg
+
+jobs:
+  validate_version:
+    name: Validate Version Input
+    runs-on: ubuntu-latest
+    # ✅ ADD: Job outputs
+    outputs:
+      validated_version: ${{ steps.validate.outputs.version }}
+    
+    steps:
+      - name: Validate version input
+        id: validate  # ✅ ADD: step ID
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+
+          PATTERN='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta[0-9]+)?$'
+          if ! [[ "${INPUT_VERSION}" =~ $PATTERN ]]; then
+            echo "::error::Invalid version format: ${INPUT_VERSION}"
+            exit 1
+          fi
+
+          if [ ${#INPUT_VERSION} -gt 50 ]; then
+            echo "::error::Version exceeds 50 characters"
+            exit 1
+          fi
+
+          # ✅ CRITICAL FIX: Output validated value
+          echo "version=${INPUT_VERSION}" >> $GITHUB_OUTPUT
+          echo "✅ Version validated: ${INPUT_VERSION}"
+
+  build_aar:
+    needs: [validate_version]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/decode_signing_key_action
+        with:
+          signing_key_file: ${{ secrets.SIGNING_KEY_FILE }}
+          signing_file_path: ${{ env.SIGNING_KEY_FILE_PATH }}
+      - run: ./gradlew --stacktrace assemble
+        env:
+          SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_KEY_FILE: ${{ env.SIGNING_KEY_FILE_PATH }}
+
+  # ... (unit test jobs unchanged - they don't use version) ...
+
+  publish_all_modules:
+    needs: [unit_test_finished, build_aar]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/decode_signing_key_action
+        with:
+          signing_key_file: ${{ secrets.SIGNING_KEY_FILE }}
+          signing_file_path: ${{ env.SIGNING_KEY_FILE_PATH }}
+      
+      # ✅ FIX: Use validated value from job output
+      - name: Update Versions
+        uses: ./.github/actions/update_versions
+        with:
+          version: ${{ needs.validate_version.outputs.validated_version }}
+      
+      - name: Publish All Modules
+        uses: ./.github/actions/publish_all_modules
+        with:
+          sonatype_usr: ${{ secrets.SONATYPE_NEXUS_USERNAME }}
+          sonatype_pwd: ${{ secrets.SONATYPE_NEXUS_PASSWORD }}
+          signing_key_id: ${{ secrets.SIGNING_KEY_ID }}
+          signing_key_pwd: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          signing_key_file: ${{ env.SIGNING_KEY_FILE_PATH }}
+
+  bump_version:
+    needs: [releasing_finished, validate_version]  # ✅ Add validate_version dependency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/set_github_user
+      
+      # ✅ FIX: Use validated value from job output
+      - name: Set release version
+        env:
+          VALIDATED_VERSION: ${{ needs.validate_version.outputs.validated_version }}
+        run: |
+          echo "RELEASE_VERSION=${VALIDATED_VERSION}" >> "$GITHUB_ENV"
+      
+      - name: Update Version
+        run: |
+          set -euo pipefail
+          ./gradlew -PversionParam="${RELEASE_VERSION}" changeGradleReleaseVersion
+          ./gradlew -PversionParam="${RELEASE_VERSION}" changeREADMEVersion
+          ./gradlew -PversionParam="${RELEASE_VERSION}" changeMigrationGuideVersion
+          ./gradlew -PversionParam="${RELEASE_VERSION}" updateCHANGELOGVersion
+          ./gradlew dokkaHtmlMultiModule
+          git add -A
+          git commit -am "Release ${RELEASE_VERSION}"
+          git tag "${RELEASE_VERSION}" -a -m "Release ${RELEASE_VERSION}"
+          ./gradlew -PversionParam="${RELEASE_VERSION}" incrementSNAPSHOTVersion
+          ./gradlew incrementVersionCode
+          git commit -am 'Prepare for development'
+          git push origin ${GITHUB_REF_NAME} "${RELEASE_VERSION}"
+
+  create_github_release:
+    needs: [bump_version, validate_version]  # ✅ Add validate_version dependency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: ./.github/actions/setup
+      - run: |
+          sed -e '1,/##/d' -e '/##/,$d' CHANGELOG.md > changelog_entries.md
+      
+      # ✅ FIX: Use validated value
+      - uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ needs.validate_version.outputs.validated_version }}
+          release_name: ${{ needs.validate_version.outputs.validated_version }}
+          body_path: changelog_entries.md
